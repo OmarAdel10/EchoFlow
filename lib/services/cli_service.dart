@@ -72,6 +72,10 @@ class CliService extends ChangeNotifier {
     }
   }
 
+  /// Exposed for parser unit tests only.
+  @visibleForTesting
+  void handleStdoutLine(String line) => _handleStdoutLine(line);
+
   void _handleStdoutLine(String line) {
     if (line.trim().isEmpty) return;
 
