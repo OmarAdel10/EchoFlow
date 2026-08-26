@@ -1,0 +1,41 @@
+name: voice_assistant_gui
+description: "Voice Assistant GUI with Flutter - Offline-first voice assistant with Arabic/English support"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  # Process management for CLI communication
+  process_run: ^1.2.0
+  # JSON handling
+  json_annotation: ^4.9.0
+  # State management
+  provider: ^6.1.2
+  # Audio playback for TTS
+  audioplayers: ^6.0.0
+  # Settings persistence
+  shared_preferences: ^2.2.2
+  # Path handling
+  path: ^1.9.0
+  # Permissions
+  permission_handler: ^11.3.0
+  # File system access
+  path_provider: ^2.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  json_serializable: ^6.7.1
+  build_runner: ^2.4.8
+
+flutter:
+  uses-material-design: true
+  generate: true
