@@ -10,8 +10,9 @@ class VoiceCommand {
   final String type;
   final String? mode;
   final String? text;
+  final String? lang;
 
-  VoiceCommand({required this.type, this.mode, this.text});
+  VoiceCommand({required this.type, this.mode, this.text, this.lang});
 
   factory VoiceCommand.fromJson(Map<String, dynamic> json) =>
       _$VoiceCommandFromJson(json);
@@ -22,8 +23,8 @@ class VoiceCommand {
   factory VoiceCommand.voice({String mode = 'once'}) =>
       VoiceCommand(type: 'voice_command', mode: mode);
 
-  factory VoiceCommand.text(String text) =>
-      VoiceCommand(type: 'text_command', text: text);
+  factory VoiceCommand.text(String text, {String? lang}) =>
+      VoiceCommand(type: 'text_command', text: text, lang: lang);
 
   factory VoiceCommand.enroll() => VoiceCommand(type: 'enroll');
 

@@ -5,8 +5,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:voice_assistant_gui/models/command.dart';
+import 'package:voice_assistant_gui/models/enroll_state.dart' as enroll;
 import 'package:voice_assistant_gui/models/response.dart' as resp;
 import 'package:voice_assistant_gui/models/mic_test_result.dart' as mic;
+import 'package:voice_assistant_gui/utils/arabic_utils.dart';
 
 class CliService extends ChangeNotifier {
   Process? _process;
@@ -15,14 +17,24 @@ class CliService extends ChangeNotifier {
   final _responseController = StreamController<resp.VoiceResponse>.broadcast();
   final _micTestController = StreamController<mic.MicTestResult>.broadcast();
   final _statusController = StreamController<String>.broadcast();
+  final _enrollController = StreamController<enroll.EnrollState>.broadcast();
 
   Stream<resp.VoiceResponse> get responses => _responseController.stream;
   Stream<mic.MicTestResult> get micTestResults => _micTestController.stream;
   Stream<String> get statusUpdates => _statusController.stream;
+  Stream<enroll.EnrollState> get enrollStates => _enrollController.stream;
 
   bool _isRunning = false;
+  bool _isUserSpeaking = false;
+  bool _isAssistantSpeaking = false;
+  String? _lastTtsText;
+  Timer? _ttsTimer;
+  Timer? _responseTimer;
   String _cliPath = 'voice-assistant';
+  String _workingDirectory = '/home/omaradel/Desktop/VoiceAssistant';
   bool _disposed = false;
+
+  static const Duration _responseTimeout = Duration(seconds: 30);
 
   String get cliPath => _cliPath;
   set cliPath(String path) {
@@ -30,16 +42,82 @@ class CliService extends ChangeNotifier {
     notifyListeners();
   }
 
+  String get workingDirectory => _workingDirectory;
+  set workingDirectory(String path) {
+    _workingDirectory = path;
+    notifyListeners();
+  }
+
   bool get isRunning => _isRunning;
+  bool get isUserSpeaking => _isUserSpeaking;
+  bool get isAssistantSpeaking => _isAssistantSpeaking;
+  String? get lastTtsText => _lastTtsText;
+
+  /// Read .env file from working directory and return key-value pairs
+  Map<String, String> _loadEnvFile() {
+    final envFile = File('$_workingDirectory/.env');
+    final envVars = <String, String>{};
+
+    debugPrint('CLI Service: Looking for .env at: $_workingDirectory/.env');
+    debugPrint('CLI Service: .env exists: ${envFile.existsSync()}');
+
+    if (envFile.existsSync()) {
+      try {
+        final content = envFile.readAsStringSync();
+        for (final line in content.split('\n')) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+
+          final eqIndex = trimmed.indexOf('=');
+          if (eqIndex > 0) {
+            final key = trimmed.substring(0, eqIndex).trim();
+            final value = trimmed.substring(eqIndex + 1).trim();
+            envVars[key] = value;
+          }
+        }
+        debugPrint('CLI Service: Loaded .env vars: ${envVars.keys.toList()}');
+        if (envVars.containsKey('GROQ_API_KEY')) {
+          debugPrint('CLI Service: GROQ_API_KEY found (length: ${envVars['GROQ_API_KEY']!.length})');
+        } else {
+          debugPrint('CLI Service: GROQ_API_KEY NOT found in .env');
+        }
+      } catch (e) {
+        debugPrint('Failed to load .env file: $e');
+      }
+    } else {
+      debugPrint('CLI Service: .env file NOT FOUND at $_workingDirectory/.env');
+    }
+    return envVars;
+  }
 
   /// Start the voice assistant CLI process in GUI mode
   Future<void> start() async {
     if (_isRunning) return;
 
+    // CUDA 12 library path (from Ollama installation) for faster-whisper GPU support
+    const cudaLibPath = '/usr/local/lib/ollama/cuda_v12';
+
+    // Build environment: inherit system env + load .env file + add CUDA path
+    final env = Map<String, String>.from(Platform.environment);
+
+    // Load GROQ_API_KEY (and other vars) from .env file in working directory
+    final dotEnvVars = _loadEnvFile();
+    env.addAll(dotEnvVars);
+
+    env['LD_LIBRARY_PATH'] = cudaLibPath;
+
+    debugPrint('CLI Service: Final env GROQ_API_KEY present: ${env.containsKey('GROQ_API_KEY')}');
+    debugPrint('CLI Service: Working directory: $_workingDirectory');
+    debugPrint('CLI Service: CLI path: $_cliPath');
+
     try {
-      _process = await Process.start(_cliPath, [
-        '--gui-mode',
-      ], runInShell: true);
+      _process = await Process.start(
+        _cliPath,
+        ['--gui-mode'],
+        runInShell: true,
+        workingDirectory: _workingDirectory,
+        environment: env,
+      );
 
       _isRunning = true;
       _statusController.add('connected');
@@ -85,6 +163,10 @@ class CliService extends ChangeNotifier {
 
       switch (type) {
         case 'transcription':
+          _isUserSpeaking = true;
+          _isAssistantSpeaking = false;
+          _ttsTimer?.cancel();
+          notifyListeners();
           _responseController.add(
             resp.VoiceResponse(
               type: 'transcription',
@@ -95,6 +177,9 @@ class CliService extends ChangeNotifier {
           );
           break;
         case 'response':
+          _responseTimer?.cancel();
+          _isUserSpeaking = false;
+          notifyListeners();
           _responseController.add(
             resp.VoiceResponse(
               type: 'response',
@@ -104,6 +189,11 @@ class CliService extends ChangeNotifier {
           );
           break;
         case 'error':
+          _responseTimer?.cancel();
+          _isUserSpeaking = false;
+          _isAssistantSpeaking = false;
+          _ttsTimer?.cancel();
+          notifyListeners();
           _responseController.add(
             resp.VoiceResponse(
               type: 'error',
@@ -115,6 +205,11 @@ class CliService extends ChangeNotifier {
           _micTestController.add(mic.MicTestResult.fromJson(json));
           break;
         case 'tts_playing':
+          _isUserSpeaking = false;
+          _isAssistantSpeaking = true;
+          _lastTtsText = json['text'] as String?;
+          _startTtsTimer(_lastTtsText ?? '');
+          notifyListeners();
           _responseController.add(
             resp.VoiceResponse(
               type: 'tts_playing',
@@ -124,6 +219,9 @@ class CliService extends ChangeNotifier {
           break;
         case 'status':
           _statusController.add(json['status'] as String? ?? 'unknown');
+          break;
+        case 'enroll_state':
+          _enrollController.add(enroll.EnrollState.fromJson(json));
           break;
         default:
           debugPrint('Unknown response type: $type');
@@ -154,19 +252,59 @@ class CliService extends ChangeNotifier {
     }
   }
 
+  void _startResponseTimer() {
+    _responseTimer?.cancel();
+    _responseTimer = Timer(_responseTimeout, _handleTimeout);
+  }
+
+  void _handleTimeout() {
+    if (_isRunning) {
+      _statusController.add('Request timed out');
+      _responseController.add(
+        resp.VoiceResponse(
+          type: 'error',
+          message: 'Request timed out. You can try again now.',
+        ),
+      );
+    }
+  }
+
   /// Send voice command (voice mode)
   void sendVoiceCommand({String mode = 'once'}) {
+    _startResponseTimer();
     sendCommand(VoiceCommand.voice(mode: mode));
   }
 
   /// Send text command
   void sendTextCommand(String text) {
-    sendCommand(VoiceCommand.text(text));
+    final lang = ArabicUtils.detectLanguage(text);
+    _startResponseTimer();
+    sendCommand(VoiceCommand.text(text, lang: lang));
   }
 
-  /// Send enroll command
-  void sendEnrollCommand() {
-    sendCommand(VoiceCommand.enroll());
+  /// Open an interactive enrollment session
+  void sendEnrollStart() {
+    _sendRaw({'type': 'enroll_start'});
+  }
+
+  /// Record the current enrollment phrase
+  void sendEnrollRecord() {
+    _sendRaw({'type': 'enroll_record'});
+  }
+
+  /// Cancel the interactive enrollment session
+  void sendEnrollCancel() {
+    _sendRaw({'type': 'enroll_cancel'});
+  }
+
+  void _sendRaw(Map<String, dynamic> payload) {
+    if (!_isRunning || _process == null) return;
+
+    try {
+      _process!.stdin.writeln(jsonEncode(payload));
+    } catch (e) {
+      debugPrint('Failed to send command: $e');
+    }
   }
 
   /// Send test mic command
@@ -210,7 +348,26 @@ class CliService extends ChangeNotifier {
     _stderrSubscription = null;
     _process = null;
     _isRunning = false;
+    _isUserSpeaking = false;
+    _isAssistantSpeaking = false;
+    _ttsTimer?.cancel();
+    _ttsTimer = null;
+    _responseTimer?.cancel();
+    _responseTimer = null;
     notifyListeners();
+  }
+
+  void _startTtsTimer(String text) {
+    _ttsTimer?.cancel();
+    // Estimate TTS duration: ~50ms per character + 500ms base, minimum 1s
+    final estimatedMs = (text.length * 50 + 500).clamp(1000, 30000);
+    _ttsTimer = Timer(Duration(milliseconds: estimatedMs + 600), () {
+      if (!_disposed) {
+        _isAssistantSpeaking = false;
+        _lastTtsText = null;
+        notifyListeners();
+      }
+    });
   }
 
   @override
@@ -220,6 +377,7 @@ class CliService extends ChangeNotifier {
     _responseController.close();
     _micTestController.close();
     _statusController.close();
+    _enrollController.close();
     super.dispose();
   }
 }
