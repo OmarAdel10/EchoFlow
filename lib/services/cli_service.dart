@@ -77,7 +77,9 @@ class CliService extends ChangeNotifier {
         }
         debugPrint('CLI Service: Loaded .env vars: ${envVars.keys.toList()}');
         if (envVars.containsKey('GROQ_API_KEY')) {
-          debugPrint('CLI Service: GROQ_API_KEY found (length: ${envVars['GROQ_API_KEY']!.length})');
+          debugPrint(
+            'CLI Service: GROQ_API_KEY found (length: ${envVars['GROQ_API_KEY']!.length})',
+          );
         } else {
           debugPrint('CLI Service: GROQ_API_KEY NOT found in .env');
         }
@@ -106,7 +108,9 @@ class CliService extends ChangeNotifier {
 
     env['LD_LIBRARY_PATH'] = cudaLibPath;
 
-    debugPrint('CLI Service: Final env GROQ_API_KEY present: ${env.containsKey('GROQ_API_KEY')}');
+    debugPrint(
+      'CLI Service: Final env GROQ_API_KEY present: ${env.containsKey('GROQ_API_KEY')}',
+    );
     debugPrint('CLI Service: Working directory: $_workingDirectory');
     debugPrint('CLI Service: CLI path: $_cliPath');
 
