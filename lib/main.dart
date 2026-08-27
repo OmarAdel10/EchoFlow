@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/cli_service.dart';
 import 'services/settings_service.dart';
 import 'services/audio_player.dart';
+import 'services/chat_service.dart';
 import 'ui/home_page.dart';
 
 void main() async {
@@ -24,6 +25,7 @@ void main() async {
         ChangeNotifierProvider<AudioPlayerService>(
           create: (_) => AudioPlayerService(),
         ),
+        ChangeNotifierProvider<ChatService>(create: (_) => ChatService()),
       ],
       child: const VoiceAssistantApp(),
     ),
