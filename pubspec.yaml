@@ -24,6 +24,8 @@ dependencies:
   shared_preferences: ^2.2.2
   # Path handling
   path: ^1.9.0
+  # Vector math for Matrix4 operations
+  vector_math: ^2.1.0
   # Permissions
   permission_handler: ^11.3.0
   # File system access
