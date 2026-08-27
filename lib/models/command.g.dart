@@ -12,6 +12,7 @@ VoiceCommand _$VoiceCommandFromJson(Map<String, dynamic> json) =>
         type: $checkedConvert('type', (v) => v as String),
         mode: $checkedConvert('mode', (v) => v as String?),
         text: $checkedConvert('text', (v) => v as String?),
+        lang: $checkedConvert('lang', (v) => v as String?),
       );
       return val;
     });
@@ -21,6 +22,7 @@ Map<String, dynamic> _$VoiceCommandToJson(VoiceCommand instance) =>
       'type': instance.type,
       'mode': ?instance.mode,
       'text': ?instance.text,
+      'lang': ?instance.lang,
     };
 
 SettingsCommand _$SettingsCommandFromJson(Map<String, dynamic> json) =>

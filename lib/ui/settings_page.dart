@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:voice_assistant_gui/services/settings_service.dart';
 import 'package:voice_assistant_gui/services/cli_service.dart';
+import 'package:voice_assistant_gui/services/chat_service.dart';
+import 'package:voice_assistant_gui/ui/enrollment_screen.dart';
 import 'package:voice_assistant_gui/ui/mic_test_dialog.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -245,34 +247,44 @@ class SettingsPage extends StatelessWidget {
         subtitle: const Text('Record phrases to improve recognition accuracy'),
         trailing: const Icon(Icons.arrow_forward_ios),
         onTap: () {
-          context.read<CliService>().sendEnrollCommand();
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const EnrollmentScreen()),
+          );
         },
       ),
     );
   }
 
   Widget _buildMicTestButton(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.mic),
-        title: const Text('Test Microphone'),
-        subtitle: const Text('Check audio levels and transcription quality'),
-        trailing: const Icon(Icons.arrow_forward_ios),
-        onTap: () {
-          showDialog(
-            context: context,
-            builder: (context) => MicTestDialog(
-              settings: context.read<SettingsService>(),
-              onTest: (duration, gain) {
-                context.read<CliService>().sendTestMicCommand(
-                  duration: duration,
-                  gain: gain,
-                );
-              },
+    return Consumer<ChatService>(
+      builder: (context, chatService, _) {
+        return Card(
+          child: ListTile(
+            leading: const Icon(Icons.mic),
+            title: const Text('Test Microphone'),
+            subtitle: const Text(
+              'Check audio levels and transcription quality',
             ),
-          );
-        },
-      ),
+            trailing: const Icon(Icons.arrow_forward_ios),
+            onTap: chatService.isProcessing
+                ? null
+                : () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => MicTestDialog(
+                        settings: context.read<SettingsService>(),
+                        onTest: (duration, gain) {
+                          context.read<CliService>().sendTestMicCommand(
+                            duration: duration,
+                            gain: gain,
+                          );
+                        },
+                      ),
+                    );
+                  },
+          ),
+        );
+      },
     );
   }
 

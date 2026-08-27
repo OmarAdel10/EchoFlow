@@ -33,8 +33,10 @@ class CliToFlutter {
     return {'type': 'voice_command', 'mode': mode};
   }
 
-  static Map<String, dynamic> textCommand(String text) {
-    return {'type': 'text_command', 'text': text};
+  static Map<String, dynamic> textCommand(String text, {String? lang}) {
+    final map = {'type': 'text_command', 'text': text};
+    if (lang != null) map['lang'] = lang;
+    return map;
   }
 
   static Map<String, dynamic> enroll() {

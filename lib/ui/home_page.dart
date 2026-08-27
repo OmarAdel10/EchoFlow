@@ -10,6 +10,7 @@ import 'package:voice_assistant_gui/ui/mic_button.dart';
 import 'package:voice_assistant_gui/ui/mic_test_dialog.dart';
 import 'package:voice_assistant_gui/ui/chat_view.dart';
 import 'package:voice_assistant_gui/ui/settings_page.dart';
+import 'package:voice_assistant_gui/services/chat_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -68,11 +69,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _handleResponse(resp.VoiceResponse response) {
-    if (response.isTranscription) {
-      // Add user message to chat
-    } else if (response.isResponse) {
-      // Add assistant response to chat
+    final chatService = context.read<ChatService>();
+    if (response.isTranscription &&
+        response.text != null &&
+        response.text!.isNotEmpty) {
+      chatService.addTranscription(response.text!, response.lang ?? 'en');
+    } else if (response.isResponse &&
+        response.text != null &&
+        response.text!.isNotEmpty) {
+      chatService.replaceLoadingWithResponse(
+        response.text!,
+        cliLanguage: response.lang,
+      );
     } else if (response.isError) {
+      chatService.replaceLoadingWithError(response.message ?? 'Unknown error');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(response.message ?? 'Unknown error')),
       );
@@ -139,10 +149,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.mic_none),
-            onPressed: () => _showMicTestDialog(),
-            tooltip: 'Test Microphone',
+          Consumer<ChatService>(
+            builder: (context, chatService, _) {
+              return IconButton(
+                icon: const Icon(Icons.mic_none),
+                onPressed: chatService.isProcessing
+                    ? null
+                    : () => _showMicTestDialog(),
+                tooltip: 'Test Microphone',
+              );
+            },
           ),
         ],
       ),
@@ -155,6 +171,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Widget _buildVoiceTab() {
     final cliService = context.watch<CliService>();
+    final chatService = context.watch<ChatService>();
+    final isProcessing = chatService.isProcessing;
 
     return Padding(
       padding: const EdgeInsets.all(24.0),
@@ -191,57 +209,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
           // Microphone button
           MicButton(
-            isListening: cliService.isRunning,
+            isConnected: cliService.isRunning,
+            isUserSpeaking: cliService.isUserSpeaking,
+            isAssistantSpeaking: cliService.isAssistantSpeaking,
+            isProcessing: isProcessing,
             onTap: () {
-              if (cliService.isRunning) {
+              if (cliService.isRunning && !isProcessing) {
                 context.read<CliService>().sendVoiceCommand(mode: 'once');
               }
             },
           ),
 
-          const SizedBox(height: 32),
-
-          // Quick actions
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            alignment: WrapAlignment.center,
-            children: [
-              _QuickActionButton(
-                icon: Icons.access_time,
-                label: 'Time',
-                onTap: () => context.read<CliService>().sendTextCommand(
-                  'what time is it',
-                ),
-              ),
-              _QuickActionButton(
-                icon: Icons.calendar_today,
-                label: 'Date',
-                onTap: () => context.read<CliService>().sendTextCommand(
-                  'what date is it',
-                ),
-              ),
-              _QuickActionButton(
-                icon: Icons.memory,
-                label: 'System Info',
-                onTap: () =>
-                    context.read<CliService>().sendTextCommand('system info'),
-              ),
-              _QuickActionButton(
-                icon: Icons.code,
-                label: 'Open Code',
-                onTap: () =>
-                    context.read<CliService>().sendTextCommand('open code'),
-              ),
-              _QuickActionButton(
-                icon: Icons.web,
-                label: 'Search',
-                onTap: () => _showSearchDialog(),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 32),
+          const SizedBox(height: 48),
 
           // Input gain display
           Consumer<SettingsService>(
@@ -306,81 +285,143 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       ),
     );
   }
-
-  void _showSearchDialog() {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Web Search'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Enter search query...',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-          onSubmitted: (value) {
-            if (value.trim().isNotEmpty) {
-              Navigator.pop(context);
-              context.read<CliService>().sendTextCommand('search for $value');
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(context);
-                context.read<CliService>().sendTextCommand(
-                  'search for ${controller.text}',
-                );
-              }
-            },
-            child: const Text('Search'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-class _QuickActionButton extends StatelessWidget {
+class _QuickActionButton extends StatefulWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final bool enabled;
+  final Future<void> Function() onTap;
 
   const _QuickActionButton({
     required this.icon,
     required this.label,
+    required this.enabled,
     required this.onTap,
   });
 
   @override
+  State<_QuickActionButton> createState() => _QuickActionButtonState();
+}
+
+class _QuickActionButtonState extends State<_QuickActionButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _elevationAnimation;
+  bool _isHovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 120),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.96,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _elevationAnimation = Tween<double>(
+      begin: 2.0,
+      end: 8.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTapDown(TapDownDetails details) {
+    if (!widget.enabled) return;
+    _controller.forward();
+  }
+
+  void _handleTapUp(TapUpDetails details) {
+    if (!widget.enabled) return;
+    _controller.reverse();
+    widget.onTap();
+  }
+
+  void _handleTapCancel() {
+    _controller.reverse();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 24, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-          ],
+    final theme = Theme.of(context);
+    final isDisabled = !widget.enabled;
+
+    final baseColor = isDisabled
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.38)
+        : theme.colorScheme.surfaceContainerHighest;
+    final hoverColor = isDisabled
+        ? baseColor
+        : theme.colorScheme.primaryContainer;
+    final iconColor = isDisabled
+        ? theme.colorScheme.onSurfaceVariant
+        : _isHovered
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.primary;
+    final textColor = isDisabled
+        ? theme.colorScheme.onSurfaceVariant
+        : _isHovered
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSurface;
+
+    return MouseRegion(
+      onEnter: (_) {
+        if (!isDisabled) setState(() => _isHovered = true);
+      },
+      onExit: (_) {
+        if (!isDisabled) setState(() => _isHovered = false);
+      },
+      child: GestureDetector(
+        onTapDown: _handleTapDown,
+        onTapUp: _handleTapUp,
+        onTapCancel: _handleTapCancel,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Transform.scale(
+              scale: _scaleAnimation.value,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: _isHovered && !isDisabled ? hoverColor : baseColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: _elevationAnimation.value,
+                      spreadRadius: 0,
+                      offset: Offset(0, _elevationAnimation.value / 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(widget.icon, size: 24, color: iconColor),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
