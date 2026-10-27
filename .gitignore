@@ -1,0 +1,58 @@
+# ==========================================
+# Global & Operating System
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==========================================
+# Code Editors & IDEs
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ==========================================
+# Client (Flutter / Dart)
+# ==========================================
+client/.dart_tool/
+client/.flutter-plugins
+client/.flutter-plugins-dependencies
+client/.packages
+client/.pub-cache/
+client/.pub/
+client/build/
+client/ios/Pods/
+client/ios/.symlinks/
+client/android/.gradle/
+client/android/app/debug/
+client/android/app/profile/
+client/android/app/release/
+
+# ==========================================
+# Server (Python / Virtual Environments)
+# ==========================================
+server/__pycache__/
+server/*.py[cod]
+server/*$py.class
+server/.venv/
+server/venv/
+server/env/
+server/.pytest_cache/
+server/.coverage
+server/htmlcov/
+server/dist/
+server/build/
+server/*.egg-info/
+
+# ==========================================
+# Environment & Local Secrets
+# ==========================================
+*.env
+*.env.local
