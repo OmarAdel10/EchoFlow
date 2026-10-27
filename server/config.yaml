@@ -1,0 +1,53 @@
+# Voice Assistant Configuration
+
+stt:
+  provider: "gemini"
+  max_listen_seconds: 5
+  language: null # auto-detect
+  allowed_languages: ["ar", "en"]
+  language_detection_threshold: 0.7
+  initial_prompt: null # set by voice enrollment (--enroll)
+  input_gain: 1.0
+  auto_gain: true
+
+  # Gemini Cloud STT settings
+  gemini_api_key: "" # set via GEMINI_API_KEY env var or VA_STT__GEMINI_API_KEY
+  gemini_model: "gemini-3.5-transcribe"
+  gemini_base_url: null # Vertex AI override (optional)
+  gemini_timeout: 30.0
+  gemini_language: null # force language (BCP-47, e.g., en-US, ar-EG), null=auto-detect
+
+tts:
+  engine: "piper"
+  rate: 180
+  volume: 0.9
+  voice_id: null
+  piper_voice_dir: "models/tts"
+  piper_voice_ar: "ar_JO-kareem-medium"
+  piper_voice_en: "en_US-lessac-medium"
+  piper_voice_ar_fallback: "ar_JO-kareem-low"
+  piper_voice_en_fallback: "en_US-lessac-low"
+
+nlp:
+  confidence_threshold: 0.6
+  confidence_threshold_ar: 0.5
+  confidence_threshold_en: 0.6
+
+llm:
+  model_path: "models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+  enabled: true
+  fallback_to_nlp: true
+  confidence_threshold: 0.7
+  max_tokens: 256
+  temperature: 0.1
+  n_gpu_layers: -1
+  n_ctx: 4096
+  n_threads: 4
+  verbose: false
+
+audio:
+  sample_rate: 16000
+  channels: 1
+
+log:
+  level: "INFO"
